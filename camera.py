@@ -15,7 +15,7 @@ class Camera():
 
 
 
-    def take_photo(self, n=10):
+    def take_photo(self, n, name_file):
         i = 0
         while i < n:
             ret, frame = self.cap.read()
@@ -27,8 +27,8 @@ class Camera():
 
             key = cv2.waitKey(1)
             if key == ord('s'):  # Appuyer sur 's' pour sauvegarder l'image
-                cv2.imwrite(f"calib_{i}.jpg", frame)
-                print(f"Image calib_{i}.jpg enregistrée")
+                cv2.imwrite(f"{name_file}_{i}.jpg", frame)
+                print(f"Image {name_file}_{i}.jpg enregistrée")
                 i += 1
 
             elif key == ord('q'):  # Appuyer sur 'q' pour quitter
@@ -41,7 +41,7 @@ class Camera():
     #############    Camera Calibration    ##############
     #####################################################
 
-    def calibration(self):
+    def calibration(self, name_file):
 
         # Préparation des points 3D réels
         objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
@@ -52,7 +52,7 @@ class Camera():
         img_points = []  # Points 2D détectés
 
         # Charger les images du damier
-        images = glob.glob("calib_*.jpg")
+        images = glob.glob(f"{name_file}_*.jpg")
 
         for fname in images:
             img = cv2.imread(fname)
@@ -77,9 +77,17 @@ class Camera():
         print("Matrice de la caméra :\n", self.camera_matrix,)
         print("Coefficients de distorsion :\n", self.dist_coeffs)
 
+
+
     def save_calib(self):
         np.savez(self.data_name, camera_matrix=self.camera_matrix, dist_coeffs=self.dist_coeffs)
         print("Sauvegarde terminée !")
+
+    def load_calib(self):
+        npzfile = np.load(self.data_name + ".npz")
+        self.camera_matrix = npzfile['camera_matrix']
+        self.dist_coeffs = npzfile['dist_coeffs']
+        print("Sauvegarde chargé !")
 
 
 
