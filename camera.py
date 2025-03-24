@@ -7,19 +7,18 @@ square_size = 2
 
 class Camera():
 
-    def __init__(self, data_name):
+    def __init__(self, data_name, cap_id):
         self.data_name = data_name
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.cap = cv2.VideoCapture(cap_id)
 
 
 
-    def take_photo(self):
-        cap = cv2.VideoCapture(2)  # 0 pour la caméra principale
-
+    def take_photo(self, n=10):
         i = 0
-        while i < 10:
-            ret, frame = cap.read()
+        while i < n:
+            ret, frame = self.cap.read()
             if not ret:
                 print("Erreur de capture")
                 break
@@ -35,7 +34,7 @@ class Camera():
             elif key == ord('q'):  # Appuyer sur 'q' pour quitter
                 break
 
-        cap.release()
+        self.cap.release()
         cv2.destroyAllWindows()
 
     #####################################################
