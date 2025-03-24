@@ -7,19 +7,18 @@ square_size = 2
 
 class Camera():
 
-    def __init__(self, data_name):
+    def __init__(self, data_name, cap_id):
         self.data_name = data_name
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.cap = cv2.VideoCapture(cap_id)
 
 
-
-    def take_photo(self):
-        cap = cv2.VideoCapture(0)  # 0 pour la caméra principale
+    def take_photo(self, n=10):
 
         i = 0
-        while i < 1:
-            ret, frame = cap.read()
+        while i < n:
+            ret, frame = self.cap.read()
             if not ret:
                 print("Erreur de capture")
                 break
@@ -35,14 +34,14 @@ class Camera():
             elif key == ord('q'):  # Appuyer sur 'q' pour quitter
                 break
 
-        cap.release()
+        self.cap.release()
         cv2.destroyAllWindows()
 
     #####################################################
     #############    Camera Calibration    ##############
     #####################################################
 
-    def calibration(self):
+    def calibration(self, ):
 
         # Préparation des points 3D réels
         objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
@@ -82,54 +81,96 @@ class Camera():
         np.savez(self.data_name, camera_matrix=self.camera_matrix, dist_coeffs=self.dist_coeffs)
         print("Sauvegarde terminée !")
 
+    #####################################################
+    #############   Stereo Rectification   ##############
+    #####################################################
+
     def stereo_rectify(self, img1_path, img2_path):
-        """
-        Fonction pour effectuer une rectification stéréo avec deux images de la même caméra.
-        Cette méthode applique la rectification stéréo aux deux images, en utilisant la calibration de la caméra.
-        """
-        # Charger les images de la caméra
+        # Charger les images
         img1 = cv2.imread(img1_path)
         img2 = cv2.imread(img2_path)
+        
+        # Si les images ont des tailles différentes, redimensionner
+        if img1.shape != img2.shape:
+            img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
+        # Charger les matrices de calibration et les coefficients de distorsion
+        camera_matrix_1 = self.camera_matrix
+        camera_matrix_2 = self.camera_matrix
+        dist_coeffs_1 = self.dist_coeffs
+        dist_coeffs_2 = self.dist_coeffs
+
+        # Rotation et translation entre les deux caméras (exemple)
+        R = np.eye(3)  # La matrice de rotation entre les caméras (par exemple une matrice identité)
+        T = np.array([1, 0, 0], dtype=np.float32)  # Le vecteur de translation (exemple)
+        
+        # Taille de l'image : on prend uniquement la largeur et la hauteur (sans les canaux)
+        image_size = img1.shape[:2][::-1]  # inverse pour (largeur, hauteur)
+
+        # Rectification stéréo
+        R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(
+            camera_matrix_1, dist_coeffs_1,
+            camera_matrix_2, dist_coeffs_2,
+            image_size, R, T
+        )
+
+        # Vous pouvez également afficher ou utiliser Q ici, qui est la matrice de transformation 4x4
+        print("Matrice Q :\n", Q)
+        
+        # Calcul des images rectifiées
+        map1x, map1y = cv2.initUndistortRectifyMap(camera_matrix_1, dist_coeffs_1, R1, P1, image_size, cv2.CV_32FC1)
+        map2x, map2y = cv2.initUndistortRectifyMap(camera_matrix_2, dist_coeffs_2, R2, P2, image_size, cv2.CV_32FC1)
+        
+        # Appliquer la rectification stéréo sur les images
+        rectified_img1 = cv2.remap(img1, map1x, map1y, cv2.INTER_LINEAR)
+        rectified_img2 = cv2.remap(img2, map2x, map2y, cv2.INTER_LINEAR)
+        
+        # Afficher les images rectifiées
+        cv2.imshow("Rectified Image 1", rectified_img1)
+        cv2.imshow("Rectified Image 2", rectified_img2)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+
+    #####################################################
+    #############    Feature Matching (SIFT)    ##########
+    #####################################################
+
+    def feature_matching(self, img1, img2):
         # Convertir les images en niveaux de gris
         gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
         gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-        # Trouver les coins du damier pour les deux images
-        ret1, corners1 = cv2.findChessboardCorners(gray1, pattern_size, None)
-        ret2, corners2 = cv2.findChessboardCorners(gray2, pattern_size, None)
+        # Initialiser l'algorithme SIFT
+        sift = cv2.SIFT_create()
 
-        if ret1 and ret2:
-            # Terminer la détection des coins avec plus de précision
-            cv2.cornerSubPix(gray1, corners1, (11, 11), (-1, -1), criteria)
-            cv2.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
+        # Extraire les points caractéristiques et leurs descripteurs
+        kp1, des1 = sift.detectAndCompute(gray1, None)
+        kp2, des2 = sift.detectAndCompute(gray2, None)
 
-            # Effectuer la stéréo rectification
-            # Obtenez la matrice de rotation et de translation de la calibration
-            R = np.eye(3)  # Identité pour une seule caméra
-            T = np.zeros((3, 1))  # Pas de translation entre deux caméras
+        # Utiliser un matcheur de descripteurs avec KNN
+        bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)  # crossCheck=False pour le KNN
+        matches = bf.knnMatch(des1, des2, k=2)
 
-            # Appliquer la stéréo rectification
-            image_size = gray1.shape[::-1]
-            R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(
-                self.camera_matrix, self.dist_coeffs, self.camera_matrix, self.dist_coeffs,
-                image_size, R, T, flags=cv2.CALIB_ZERO_DISPARITY, alpha=0)
+        # Filtrer les bonnes correspondances en utilisant le ratio de Lowe
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.75 * n.distance:  # ratio de Lowe
+                good_matches.append(m)
 
-            # Calculer les cartes de transformation
-            map1x, map1y = cv2.initUndistortRectifyMap(self.camera_matrix, self.dist_coeffs, R1, P1, image_size, cv2.CV_32FC1)
-            map2x, map2y = cv2.initUndistortRectifyMap(self.camera_matrix, self.dist_coeffs, R2, P2, image_size, cv2.CV_32FC1)
+        # Dessiner les correspondances filtrées
+        result_img = cv2.drawMatches(img1, kp1, img2, kp2, good_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        
+        # Afficher l'image avec les correspondances
+        cv2.imshow('Good Matches', result_img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
-            # Appliquer la rectification
-            rectified_img1 = cv2.remap(img1, map1x, map1y, cv2.INTER_LINEAR)
-            rectified_img2 = cv2.remap(img2, map2x, map2y, cv2.INTER_LINEAR)
+        return good_matches
 
-            # Afficher les images rectifiées
-            cv2.imshow("Rectified Image 1", rectified_img1)
-            cv2.imshow("Rectified Image 2", rectified_img2)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            
-        else:
-            print("Erreur de détection des coins du damier dans les images.")
+
+
+
+
 
 
