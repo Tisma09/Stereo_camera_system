@@ -53,6 +53,7 @@ class Camera():
 
         # Charger les images du damier
         images = glob.glob(f"{name_file}_*.jpg")
+        gray = None
 
         for fname in images:
             img = cv2.imread(fname)
