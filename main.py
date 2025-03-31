@@ -1,4 +1,5 @@
 import os
+import cv2
 
 from stereo_sys import StereoSys
 
@@ -10,8 +11,10 @@ def main():
     folder_image_stereo = "images_calib_stereo"
     folder_calibration = "data_calib"
 
+    liste_cameras = trouver_cameras()
+
     # Initialisation du système stéréo
-    stereo_sys = StereoSys("calibration_data", 2, 1, debug_mode=True)
+    stereo_sys = StereoSys("calibration_data", liste_cameras[0], liste_cameras[1], debug_mode=True)
 
     # Calibration des caméras
     load_path = os.path.join(folder_calibration, "calibration_data_1.npz")
@@ -49,7 +52,7 @@ def main():
         stereo_sys.cam_2.load_calib(folder_calibration)
 
 
-    req_calibration = input("Voulez-vous commencer la calibration stenreo ? (y/n)")
+    req_calibration = input("Voulez-vous commencer la calibration stereo ? (y/n)")
     if req_calibration == "y" :
         x_calib = stereo_sys.stereo_calibration(folder_name=folder_image_stereo)
         if x_calib == 1:
@@ -62,6 +65,28 @@ def main():
         except :
             print("Error : Pas de donnée de calibration trouvé")
             return
+        
+def trouver_cameras():
+    # Fonction pour trouver les caméras disponibles
+    liste_cameras = []
+    for i in range(10):  # Vérifie jusqu'à 10 caméras
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            liste_cameras.append(i)
+            cap.release()
+
+    if len(liste_cameras) == 0:
+        print("Aucune caméra trouvée")
+        return []
+    elif len(liste_cameras) == 1:
+        print("Branchez une deuxieme camera")
+    elif len(liste_cameras) == 3:
+        camera_defaut = input("Avez-vous une caméra par défaut ? (y/n)")
+        if camera_defaut == "y":
+            del liste_cameras[0]
+    elif len(liste_cameras) > 3:
+        print("Trop de cameras trouvées")
+    return liste_cameras
 
 
 if __name__ == "__main__":
