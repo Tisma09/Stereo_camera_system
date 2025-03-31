@@ -63,6 +63,8 @@ def main():
             print("Erreur lors de la calibration stéréo")
             return
         stereo_sys.stereo_rectify()
+        stereo_sys.reconstruction_3D()
+        stereo_sys.visualisation_3D()
 
 
 def find_cameras():

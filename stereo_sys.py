@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import os
+import open3d as o3d
 
 from camera import Camera 
 
@@ -180,6 +181,81 @@ class StereoSys():
 
 
 
+    #####################################################
+    #############   Stereo Rectification   ##############
+    #####################################################
+
+    def stereo_rectify(self):
+        image_size = self.image_1.shape[:2][::-1] 
+        # Pour image_size : les deux font la même taille donc peu importe 1 ou 2
+
+        # Rectification stéréo
+        R1, R2, self.P1, self.P2, self.Q, roi1, roi2 = cv2.stereoRectify(
+            self.cam_1.camera_matrix, self.cam_1.dist_coeffs,
+            self.cam_2.camera_matrix, self.cam_2.dist_coeffs,
+            image_size, self.R, self.T
+        )
+
+        # Calcul des images rectifiées
+        map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.camera_matrix, self.cam_1.dist_coeffs, R1, self.P1, image_size, cv2.CV_32FC1)
+        map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.camera_matrix, self.cam_2.dist_coeffs, R2, self.P2, image_size, cv2.CV_32FC1)
+        
+        
+        # Appliquer la rectification stéréo sur les images
+        self.image_1 = cv2.remap(self.image_1, map1x, map1y, cv2.INTER_LINEAR)
+        self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
+        
+        if self.debug_mode:
+            # Afficher les images rectifiées
+            cv2.imshow("Rectified Image 1", self.image_1)
+            cv2.imshow("Rectified Image 2", self.image_2)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+
+    def reconstruction_3D(self):
+        # Conversion en niveaux de gris
+        gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
+        gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
+
+        # Création du StereoBM
+        stereo = cv2.StereoBM_create(numDisparities=16*10, blockSize=21)
+        
+        # Calcul de la carte de disparité
+        disparity = stereo.compute(gray_1, gray_2)
+        
+        # Conversion en format float32 pour la reconstruction 3D
+        disparity = disparity.astype(np.float32) / 16.0
+        
+        # Reconstruction 3D
+        points_3d = cv2.reprojectImageTo3D(disparity, self.Q)
+        
+        # Créer un masque pour les points valides
+        mask = disparity > disparity.min()
+        
+        # Filtrer les points 3D et les couleurs
+        self.points_3d = points_3d[mask]
+        self.colors = self.image_1[mask]
+        
+        if self.debug_mode:
+            cv2.imshow("Carte de disparité", disparity / disparity.max())
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+        
+        return self.points_3d, self.colors
+
+    def visualisation_3D(self):
+        if not hasattr(self, 'points_3d') or not hasattr(self, 'colors'):
+            print("Exécutez d'abord reconstruction_3D")
+            return
+        
+        # Création du nuage de points
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(self.points_3d)
+        pcd.colors = o3d.utility.Vector3dVector(self.colors / 255.0)  # Normalisation des couleurs
+        
+        # Visualisation
+        o3d.visualization.draw_geometries([pcd])
 
 
 
