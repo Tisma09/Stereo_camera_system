@@ -16,7 +16,7 @@ class Camera():
 
 
 
-    def take_photo(self, n, name_file, folder_name=None): 
+    def take_photo_calib(self, n, name_file, folder_name=None): 
         save_path = name_file
         if folder_name:
             save_path = os.path.join(folder_name, name_file)

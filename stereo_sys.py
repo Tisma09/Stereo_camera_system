@@ -14,19 +14,21 @@ class StereoSys():
         self.data_name = data_name
         self.cam_1 = Camera(data_name+"_1", cap_id_1)
         self.cam_2 = Camera(data_name+"_2", cap_id_2)
+        self.image_1 = None
+        self.image_2 = None
         self.R = None
         self.T = None
         self.E = None
         self.F = None
-
-
+        
     #####################################################
-    #############    Stereo Calibration    ##############
+    #############    Photo to process      ##############
     #####################################################
 
-    def stereo_calibration(self, folder_name=None):
+    def take_photos(self, folder_name=None):
         cap_1 = cv2.VideoCapture(self.cam_1.cap_id)
         cap_2 = cv2.VideoCapture(self.cam_2.cap_id)
+        sucess = 0
         i = 0
 
         # Préparation chemins de sauvegarde
@@ -42,7 +44,8 @@ class StereoSys():
             ret2, frame2 = cap_2.read()
             if not ret1 or not ret2:
                 print("Erreur de capture")
-                return 1
+                sucess = 1
+                break
 
             cv2.imshow("Capture 1", frame1)
             cv2.imshow("Capture 2", frame2)
@@ -55,6 +58,7 @@ class StereoSys():
                 print(f"Image 2 enregistrée dans {save_path_2}")
                 i+= 1
             elif key == ord('q'):
+                sucess = 1
                 break
 
         cap_1.release()
@@ -62,11 +66,21 @@ class StereoSys():
         cv2.destroyAllWindows()
 
         # Lecture des images sauvegardées
-        image_1 = cv2.imread(save_path_1, cv2.IMREAD_COLOR)
-        image_2 = cv2.imread(save_path_2, cv2.IMREAD_COLOR)
+        self.image_1 = cv2.imread(save_path_1, cv2.IMREAD_COLOR)
+        self.image_2 = cv2.imread(save_path_2, cv2.IMREAD_COLOR)
 
-        gray_1 = cv2.cvtColor(image_1, cv2.COLOR_BGR2GRAY)
-        gray_2 = cv2.cvtColor(image_2, cv2.COLOR_BGR2GRAY)
+        # Redimensionnement des images si nécessaire
+        if self.image_1.shape != self.image_2.shape:
+            self.image_2 = cv2.resize(self.image_2, (self.image_1.shape[1], self.image_1.shape[0]))
+
+        return sucess
+
+    #####################################################
+    ########## Feature Detection and Matching ###########
+    #####################################################
+    def feature_matching(self):
+        gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
+        gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
 
         # Détection de point d'intérets SIFT
         sift = cv2.SIFT_create()
@@ -84,10 +98,19 @@ class StereoSys():
             cv2.imshow("Correspondances SIFT", matched_img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
+        
+        return matches, keypoints1, keypoints2
+
+    #####################################################
+    #############    Stereo Calibration    ##############
+    #####################################################
+
+    def stereo_calibration(self):
+        matches, keypoints1, keypoints2 = self.feature_matching()
 
         if len(matches) < 8:
             print("Pas assez de points d'intérêt correspondants trouvés.")
-            return
+            return 1
 
         # Extraction des points correspondants
         pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
@@ -112,9 +135,8 @@ class StereoSys():
 
         # Verif lignes épipolaires
         if self.debug_mode:
-            img1_with_lines = self.show_lines(image_1, pts1)
-            img2_with_lines = self.show_lines(image_2, pts2)
-            img2_with_lines = self.show_lines(image_2, pts2)
+            img1_with_lines = self.show_lines(self.image_1, pts1)
+            img2_with_lines = self.show_lines(self.image_2, pts2)
             cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
             cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
 
@@ -124,26 +146,38 @@ class StereoSys():
         return 0
 
 
-    def save_calibration(self, folder_name=None):
-        save_path = self.data_name
-        if folder_name:
-            os.makedirs(folder_name, exist_ok=True)
-            save_path = os.path.join(folder_name, self.data_name)
-        np.savez(save_path, R=self.R, T=self.T, E=self.E, F=self.F)
-        print("Sauvegarde terminée !")
 
+    #####################################################
+    #############   Stereo Rectification   ##############
+    #####################################################
 
+    def stereo_rectify(self):
+        image_size = self.image_1.shape[:2][::-1] 
+        # Pour image_size : les deux font la même taille donc peu importe 1 ou 2
 
-    def load_calibration(self, folder_name=None):
-        load_path = self.data_name
-        if folder_name:
-            load_path = os.path.join(folder_name, self.data_name)
-        npzfile = np.load(f"{load_path}.npz")
-        self.R = npzfile['R']
-        self.T = npzfile['T']
-        self.E = npzfile['E']
-        self.T = npzfile['F']
-        print("Sauvegarde chargé !")
+        # Rectification stéréo
+        R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(
+            self.cam_1.camera_matrix, self.cam_1.dist_coeffs,
+            self.cam_2.camera_matrix, self.cam_2.dist_coeffs,
+            image_size, self.R, self.T
+        )
+
+        # Calcul des images rectifiées
+        map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.camera_matrix, self.cam_1.dist_coeffs, R1, P1, image_size, cv2.CV_32FC1)
+        map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.camera_matrix, self.cam_2.dist_coeffs, R2, P2, image_size, cv2.CV_32FC1)
+        
+        
+        # Appliquer la rectification stéréo sur les images
+        self.image_1 = cv2.remap(self.image_1, map1x, map1y, cv2.INTER_LINEAR)
+        self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
+        
+        if self.debug_mode:
+            # Afficher les images rectifiées
+            cv2.imshow("Rectified Image 1", self.image_1)
+            cv2.imshow("Rectified Image 2", self.image_2)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
 
 
 
