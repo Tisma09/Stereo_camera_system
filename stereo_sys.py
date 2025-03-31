@@ -125,7 +125,7 @@ class StereoSys():
         self.E = K2.T @ self.F @ K1
 
         # Rotation et translation
-        _, self.R, self.T, mask = cv2.recoverPose(self.E, pts1, pts2, K1)
+        _, self.R, self.T, mask = cv2.recoverPose(self.E, pts1, pts2, K2)
 
         print("Calibration stéréo terminée !")
         print("Matrice de rotation :\n", self.R)
@@ -139,9 +139,8 @@ class StereoSys():
             img2_with_lines = self.show_lines(self.image_2, pts2)
             cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
             cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
-
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
         return 0
 
