@@ -1,26 +1,27 @@
 import numpy as np
 import cv2
 import os
-from scipy.io import savemat
+
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # Nécessaire pour le plot 3D
+import struct
 
 from camera import Camera 
-
-pattern_size = (7, 9)
-square_size = 2
+from config import *
 
 class StereoSys():
 
     def __init__(self, data_name, cap_id_1, cap_id_2, debug_mode=False):
         self.debug_mode = debug_mode
+
         self.data_name = data_name
         self.cam_1 = Camera(data_name+"_1", cap_id_1)
         self.cam_2 = Camera(data_name+"_2", cap_id_2)
-        self.image_1 = None
-        self.image_2 = None
+        self.image_1, self.image_2 = None, None
+        self.gray_1, self.gray_2 = None, None
         self.R, self.T, self.E, self.F = None, None, None, None
-        self.P1, self.P2, self.Q = None, None, None
+        self.Q = None
+        self.disparity = None
+        self.point3d, self.color = None, None
         
     #####################################################
     #############    Photo to process      ##############
@@ -29,7 +30,6 @@ class StereoSys():
     def take_photos(self, folder_name=None):
         cap_1 = cv2.VideoCapture(self.cam_1.cap_id)
         cap_2 = cv2.VideoCapture(self.cam_2.cap_id)
-        sucess = 0
         i = 0
 
         # Préparation chemins de sauvegarde
@@ -45,7 +45,6 @@ class StereoSys():
             ret2, frame2 = cap_2.read()
             if not ret1 or not ret2:
                 print("Erreur de capture")
-                sucess = 1
                 break
 
             cv2.imshow("Capture 1", frame1)
@@ -59,7 +58,6 @@ class StereoSys():
                 print(f"Image 2 enregistrée dans {save_path_2}")
                 i+= 1
             elif key == ord('q'):
-                sucess = 1
                 break
 
         cap_1.release()
@@ -67,26 +65,21 @@ class StereoSys():
         cv2.destroyAllWindows()
 
         # Lecture des images sauvegardées
-        self.image_1 = cv2.imread(save_path_1, cv2.IMREAD_COLOR)
-        self.image_2 = cv2.imread(save_path_2, cv2.IMREAD_COLOR)
+        self.image_1 = cv2.imread(save_path_1)
+        self.image_2 = cv2.imread(save_path_2)
+        self.gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
+        self.gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
 
-        # Redimensionnement des images si nécessaire
-        if self.image_1.shape != self.image_2.shape:
-            self.image_2 = cv2.resize(self.image_2, (self.image_1.shape[1], self.image_1.shape[0]))
-
-        return sucess
 
     #####################################################
     ########## Feature Detection and Matching ###########
     #####################################################
-    def feature_matching(self):
-        gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
-        gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
 
+    def feature_matching(self):
         # Détection de point d'intérets SIFT
         sift = cv2.SIFT_create()
-        keypoints1, descriptors1 = sift.detectAndCompute(gray_1, None)
-        keypoints2, descriptors2 = sift.detectAndCompute(gray_2, None)
+        keypoints1, descriptors1 = sift.detectAndCompute(self.gray_1, None)
+        keypoints2, descriptors2 = sift.detectAndCompute(self.gray_2, None)
 
         # Association des points
         bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
@@ -95,7 +88,7 @@ class StereoSys():
 
         # Montre quelques matches
         if self.debug_mode:
-            matched_img = cv2.drawMatches(gray_1, keypoints1, gray_2, keypoints2, matches[:10], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            matched_img = cv2.drawMatches(self.gray_1, keypoints1, self.gray_2, keypoints2, matches[:10], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             cv2.imshow("Correspondances SIFT", matched_img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -111,7 +104,7 @@ class StereoSys():
 
         if len(matches) < 8:
             print("Pas assez de points d'intérêt correspondants trouvés.")
-            return 1
+            return
 
         # Extraction des points correspondants
         pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
@@ -128,22 +121,22 @@ class StereoSys():
         # Rotation et translation
         _, self.R, self.T, mask = cv2.recoverPose(self.E, pts1, pts2, K2)
 
-        print("Calibration stéréo terminée !")
-        print("Matrice de rotation :\n", self.R)
-        print("Vecteur de translation :\n", self.T)
-        print("Matrice essentielle :\n", self.E)
-        print("Matrice fondamentale :\n", self.F)
+        
 
         # Verif lignes épipolaires
         if self.debug_mode:
+            print("Calibration stéréo terminée !")
+            print("Matrice de rotation :\n", self.R)
+            print("Vecteur de translation :\n", self.T)
+            print("Matrice essentielle :\n", self.E)
+            print("Matrice fondamentale :\n", self.F)
+
             img1_with_lines = self.show_lines(self.image_1, pts1)
             img2_with_lines = self.show_lines(self.image_2, pts2)
             cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
             cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-
-        return 0
 
 
 
@@ -156,30 +149,92 @@ class StereoSys():
         # Pour image_size : les deux font la même taille donc peu importe 1 ou 2
 
         # Rectification stéréo
-        R1, R2, self.P1, self.P2, self.Q, roi1, roi2 = cv2.stereoRectify(
+        R1, R2, P1, P2, self.Q, roi1, roi2 = cv2.stereoRectify(
             self.cam_1.camera_matrix, self.cam_1.dist_coeffs,
             self.cam_2.camera_matrix, self.cam_2.dist_coeffs,
             image_size, self.R, self.T
         )
-
         # Calcul des images rectifiées
         map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.camera_matrix, self.cam_1.dist_coeffs, R1, self.P1, image_size, cv2.CV_32FC1)
         map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.camera_matrix, self.cam_2.dist_coeffs, R2, self.P2, image_size, cv2.CV_32FC1)
-        
-        
         # Appliquer la rectification stéréo sur les images
         self.image_1 = cv2.remap(self.image_1, map1x, map1y, cv2.INTER_LINEAR)
         self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
+        self.gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
+        self.gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
+
         
         if self.debug_mode:
-            # Afficher les images rectifiées
-            cv2.imshow("Rectified Image 1", self.image_1)
-            cv2.imshow("Rectified Image 2", self.image_2)
+            
+            matches, keypoints1, keypoints2 = self.feature_matching()
+            pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
+            pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
+            img1_with_lines = self.show_lines(self.image_1, pts1)
+            img2_with_lines = self.show_lines(self.image_2, pts2)
+            cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
+            cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
 
+    def find_disparity(self):
+        stereo = cv2.StereoSGBM_create(minDisparity = min_disparity, numDisparities = num_disparities,preFilterCap = 1, blockSize = 5, uniquenessRatio = 2, speckleWindowSize = 50, speckleRange = 2, disp12MaxDiff = 1, P1 = 8*3*window_size**2, P2 = 32*3*window_size**2,mode = 4)
+        disparity = stereo.compute(self.gray_1,self.gray_2).astype(np.float32)
+        self.disparity = cv2.medianBlur(disparity, 5)
+        #self.disparity = cv.bilateralFilter(disparity,9,75,75)
 
+        if self.debug_mode:
+            plt.imshow(disparity,"jet")
+            plt.show()
+
+
+    def disparity_to_pointcloud(self, image_num):
+        image = self.image_1 if image_num == 0 else self.image_2
+        color = cv2.imread(image)
+        point_cloud = cv2.reprojectImageTo3D(self.disparity, self.Q)
+        mask = self.disparity > self.disparity.min()
+        xp=point_cloud[:,:,0]
+        yp=point_cloud[:,:,1]
+        zp=point_cloud[:,:,2]
+        color = color[mask]
+        self.color = color.reshape(-1,3)
+        xp = xp[np.where(mask== True)[0],np.where(mask== True)[1]]
+        yp = yp[np.where(mask== True)[0],np.where(mask== True)[1]]
+        zp = zp[np.where(mask== True)[0],np.where(mask== True)[1]]
+
+        xp=xp.flatten().reshape(-1,1)
+        yp=yp.flatten().reshape(-1,1)
+        zp=zp.flatten().reshape(-1,1)
+        self.point3d = np.hstack((xp,yp,zp))
+
+    
+    def write_pointcloud(self, filename):
+        assert self.xyz_points.shape[1] == 3,'Input XYZ points should be Nx3 float array'
+        if rgb_points is None:
+            rgb_points = np.ones(self.xyz_points.shape).astype(np.uint8)*255
+        assert self.xyz_points.shape == rgb_points.shape,'Input RGB colors should be Nx3 float array and have same size as input XYZ points'
+        # Écrire l'en-tête du fichier .ply
+        print("opening file")
+        fid = open(filename,'wb')
+        fid.write(bytes('ply\n', 'utf-8'))
+        fid.write(bytes('format binary_little_endian 1.0\n', 'utf-8'))
+        fid.write(bytes('element vertex %d\n'%self.xyz_points.shape[0], 'utf-8'))
+        fid.write(bytes('property float x\n', 'utf-8'))
+        fid.write(bytes('property float y\n', 'utf-8'))
+        fid.write(bytes('property float z\n', 'utf-8'))
+        fid.write(bytes('property uchar red\n', 'utf-8'))
+        fid.write(bytes('property uchar green\n', 'utf-8'))
+        fid.write(bytes('property uchar blue\n', 'utf-8'))
+        fid.write(bytes('end_header\n', 'utf-8'))
+
+        # Écrire des points 3D dans un fichier .ply
+        for i in range(self.xyz_points.shape[0]):
+            if(i%5000 == 0):
+                print(i)
+            fid.write(bytearray(struct.pack("fffccc",self.xyz_points[i,0],self.xyz_points[i,1],self.xyz_points[i,2],
+                                                rgb_points[i,2].tobytes(),rgb_points[i,1].tobytes(),
+                                                rgb_points[i,1].tobytes())))
+        fid.close()
 
     #####################################################
     #############         Debug Mode        #############
@@ -198,35 +253,3 @@ class StereoSys():
 
         return img_with_lines
 
-    def compute_3d_points(self):
-        # Obtenir les points correspondants
-        matches, keypoints1, keypoints2 = self.feature_matching()
-        
-        # Extraire les coordonnées des points
-        pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
-        pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
-        
-        # Triangulation des points 3D
-        points_4d = cv2.triangulatePoints(self.P1, self.P2, pts1.T, pts2.T)
-        
-        # Convertir en coordonnées 3D homogènes
-        points_3d = points_4d[:3] / points_4d[3]
-        points_3d = points_3d.T
-        
-        # Création du plot 3D
-        fig = plt.figure(figsize=(10, 10))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # Plot des points
-        ax.scatter(points_3d[:, 0], points_3d[:, 1], points_3d[:, 2], c='b', marker='o')
-        
-        # Labels et titre
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.set_title('Reconstruction 3D')
-        
-        # Afficher le plot
-        plt.show()
-        
-        return points_3d

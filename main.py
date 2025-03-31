@@ -25,11 +25,8 @@ def main():
 
     if req_calib_1 == "y" :
         req_n = int(input("Avec combien d'images voulez-vous calibrer la caméras 1 ?"))
-        x_photo = stereo_sys.cam_1.take_photo_calib(req_n, "calib_1", folder_name=folder_image_1)
-        x_calib = stereo_sys.cam_1.calibration("calib_1", folder_name=folder_image_1)
-        if x_photo == 1 or x_calib == 1:
-            print("Erreur lors de la calibration de la caméra 1")
-            return
+        stereo_sys.cam_1.take_photo_calib(req_n, "calib_1", folder_name=folder_image_1)
+        stereo_sys.cam_1.calibration("calib_1", folder_name=folder_image_1, debug_mode=True)
         stereo_sys.cam_1.save_calib(folder_calibration)
     else :
         stereo_sys.cam_1.load_calib(folder_calibration)
@@ -42,11 +39,8 @@ def main():
 
     if req_calib_2 == "y" :
         req_n = int(input("Avec combien d'images voulez-vous calibrer la caméras 2 ?"))
-        x_photo = stereo_sys.cam_2.take_photo_calib(req_n, "calib_2", folder_name=folder_image_2)
-        x_calib = stereo_sys.cam_2.calibration("calib_2", folder_name=folder_image_2)
-        if x_photo == 1 or x_calib == 1:
-            print("Erreur lors de la calibration de la caméra 2")
-            return
+        stereo_sys.cam_2.take_photo_calib(req_n, "calib_2", folder_name=folder_image_2)
+        stereo_sys.cam_2.calibration("calib_2", folder_name=folder_image_2, debug_mode=True)
         stereo_sys.cam_2.save_calib(folder_calibration)
     else :
         stereo_sys.cam_2.load_calib(folder_calibration)
@@ -54,16 +48,11 @@ def main():
 
     req_calibration = input("Voulez-vous commencer la prise de photo stereo ? (y/n)")
     if req_calibration == "y" :
-        x_photo = stereo_sys.take_photos(folder_name=folder_image_stereo)
-        if x_photo == 1 :
-            print("Erreur lors de la prises des photos")
-            return
-        x_calib = stereo_sys.stereo_calibration()
-        if x_calib == 1 :
-            print("Erreur lors de la calibration stéréo")
-            return
+        stereo_sys.take_photos(folder_name=folder_image_stereo)
+        stereo_sys.stereo_calibration()
         stereo_sys.stereo_rectify()
-        stereo_sys.compute_3d_points()
+        stereo_sys.disparity_to_pointcloud()
+        stereo_sys.write_pointcloud("output.ply")
 
 
 def find_cameras():
