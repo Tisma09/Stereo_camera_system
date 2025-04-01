@@ -34,12 +34,12 @@ class StereoSys():
         i = 0
 
         # Préparation chemins de sauvegarde
-        save_path_1 = "Image_cam_1.jpg"
-        save_path_2 = "Image_cam_2.jpg"
+        save_path_1 = "Image_cam_1.png"
+        save_path_2 = "Image_cam_2.png"
         if folder_name:
             os.makedirs(folder_name, exist_ok=True)
-            save_path_1 = os.path.join(folder_name, "Image_cam_1.jpg")
-            save_path_2 = os.path.join(folder_name, "Image_cam_2.jpg")
+            save_path_1 = os.path.join(folder_name, "Image_cam_1.png")
+            save_path_2 = os.path.join(folder_name, "Image_cam_2.png")
 
         while i < 1:
             ret1, frame1 = cap_1.read()
@@ -120,7 +120,7 @@ class StereoSys():
         self.E = K2.T @ self.F @ K1
 
         # Rotation et translation
-        _, self.R, self.T, mask = cv2.recoverPose(self.E, pts1, pts2, K2)
+        _, self.R, self.T, mask = cv2.recoverPose(self.E, pts1, pts2, K1)
 
         
 
@@ -132,8 +132,8 @@ class StereoSys():
             print("Matrice essentielle :\n", self.E)
             print("Matrice fondamentale :\n", self.F)
 
-            img1_with_lines = self.show_lines(self.image_1, pts1)
-            img2_with_lines = self.show_lines(self.image_2, pts2)
+            img1_with_lines = self.show_lines(self.image_1, pts1, 1)
+            img2_with_lines = self.show_lines(self.image_2, pts2, 2)
             cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
             cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
             cv2.waitKey(0)
@@ -170,8 +170,8 @@ class StereoSys():
             matches, keypoints1, keypoints2 = self.feature_matching()
             pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
             pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
-            img1_with_lines = self.show_lines(self.image_1, pts1)
-            img2_with_lines = self.show_lines(self.image_2, pts2)
+            img1_with_lines = self.show_lines(self.image_1, pts1, 1)
+            img2_with_lines = self.show_lines(self.image_2, pts2, 2)
             cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
             cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
             cv2.waitKey(0)
@@ -181,7 +181,7 @@ class StereoSys():
     def find_disparity(self):
         stereo = cv2.StereoSGBM_create(minDisparity = min_disparity, numDisparities = num_disparities,preFilterCap = 1, blockSize = 5, uniquenessRatio = 2, speckleWindowSize = 50, speckleRange = 2, disp12MaxDiff = 1, P1 = 8*3*window_size**2, P2 = 32*3*window_size**2,mode = 4)
         self.disparity = stereo.compute(self.gray_1,self.gray_2).astype(np.float32)
-        #self.disparity = cv2.medianBlur(self.disparity, 5)
+        self.disparity = cv2.medianBlur(self.disparity, 5)
         #self.disparity = cv2.bilateralFilter(self.disparity,9,75,75)
 
         if self.debug_mode:
@@ -194,14 +194,14 @@ class StereoSys():
         color = self.image_1 if image_num == 0 else self.image_2
         point_cloud = cv2.reprojectImageTo3D(self.disparity, self.Q)
         mask = self.disparity > self.disparity.min()
-        xp=point_cloud[:,:,0]
-        yp=point_cloud[:,:,1]
-        zp=point_cloud[:,:,2]
+        xp = point_cloud[:,:,0]
+        yp = point_cloud[:,:,1]
+        zp = point_cloud[:,:,2]
         color = color[mask]
         self.color = color.reshape(-1,3)
-        xp = xp[np.where(mask== True)[0],np.where(mask== True)[1]]
-        yp = yp[np.where(mask== True)[0],np.where(mask== True)[1]]
-        zp = zp[np.where(mask== True)[0],np.where(mask== True)[1]]
+        xp = xp[np.where(mask == True)[0],np.where(mask == True)[1]]
+        yp = yp[np.where(mask == True)[0],np.where(mask == True)[1]]
+        zp = zp[np.where(mask == True)[0],np.where(mask == True)[1]]
 
         xp=xp.flatten().reshape(-1,1)
         yp=yp.flatten().reshape(-1,1)
@@ -255,8 +255,8 @@ class StereoSys():
             if(i%5000 == 0):
                 print(i)
             fid.write(bytearray(struct.pack("fffccc",self.point3d[i,0],self.point3d[i,1],self.point3d[i,2],
-                                                self.color[i,2].tobytes(),self.color[i,1].tobytes(),
-                                                self.color[i,1].tobytes())))
+                                            self.color[i,2].tobytes(),self.color[i,1].tobytes(),
+                                            self.color[i,1].tobytes())))
         fid.close()
 
   
@@ -265,8 +265,8 @@ class StereoSys():
     #############         Debug Mode        #############
     #####################################################
 
-    def show_lines(self, image, pts):
-        lines = cv2.computeCorrespondEpilines(pts.reshape(-1, 1, 2), 2, self.F)
+    def show_lines(self, image, pts, num):
+        lines = cv2.computeCorrespondEpilines(pts.reshape(-1, 1, 2), num, self.F)
         lines = lines.reshape(-1, 3)
 
         img_with_lines = image.copy()

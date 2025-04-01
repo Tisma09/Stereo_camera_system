@@ -30,7 +30,7 @@ class Camera():
             cv2.imshow("Capture du damier", frame)
             key = cv2.waitKey(1)
             if key == ord('s'): 
-                img_path = f"{save_path}_{i}.jpg"
+                img_path = f"{save_path}_{i}.png"
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 cv2.imwrite(img_path, frame)
                 print(f"Image {img_path} enregistrée")
@@ -57,9 +57,9 @@ class Camera():
         img_points = [] 
 
         # Recherche des images
-        search_path = f"{name_file}_*.jpg"
+        search_path = f"{name_file}_*.png"
         if folder_name:
-            search_path = os.path.join(folder_name, f"{name_file}_*.jpg")
+            search_path = os.path.join(folder_name, f"{name_file}_*.png")
         images = glob.glob(search_path)
 
         for fname in images:

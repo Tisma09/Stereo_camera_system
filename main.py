@@ -11,7 +11,8 @@ def main():
     folder_image_stereo = "images_calib_stereo"
     folder_calibration = "data_calib"
 
-    list_cameras = find_cameras()
+    #list_cameras = find_cameras()
+    list_cameras = [0, 2]
 
     # Initialisation du système stéréo
     stereo_sys = StereoSys("calibration_data", list_cameras[0], list_cameras[1], debug_mode=True)
