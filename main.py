@@ -51,8 +51,9 @@ def main():
         stereo_sys.take_photos(folder_name=folder_image_stereo)
         stereo_sys.stereo_calibration()
         stereo_sys.stereo_rectify()
-        stereo_sys.disparity_to_pointcloud()
-        stereo_sys.write_pointcloud("output.ply")
+        stereo_sys.find_disparity()
+        stereo_sys.disparity_to_pointcloud(0)
+        stereo_sys.display_point_cloud()
 
 
 def find_cameras():
@@ -75,6 +76,8 @@ def find_cameras():
             del liste_cameras[0]
     elif len(liste_cameras) > 3:
         print("Trop de cameras trouvées")
+
+    print(f"Caméras trouvées : {liste_cameras}")
     return liste_cameras
 
 

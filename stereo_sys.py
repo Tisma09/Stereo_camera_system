@@ -4,6 +4,7 @@ import os
 
 import matplotlib.pyplot as plt
 import struct
+import open3d as o3d
 
 from camera import Camera 
 from config import *
@@ -114,8 +115,8 @@ class StereoSys():
         self.F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC)
 
         # Matrice essentielle
-        K1 = self.cam_1.camera_matrix
-        K2 = self.cam_2.camera_matrix
+        K1 = self.cam_1.K
+        K2 = self.cam_2.K
         self.E = K2.T @ self.F @ K1
 
         # Rotation et translation
@@ -150,13 +151,13 @@ class StereoSys():
 
         # Rectification stéréo
         R1, R2, P1, P2, self.Q, roi1, roi2 = cv2.stereoRectify(
-            self.cam_1.camera_matrix, self.cam_1.dist_coeffs,
-            self.cam_2.camera_matrix, self.cam_2.dist_coeffs,
+            self.cam_1.K, self.cam_1.dist,
+            self.cam_2.K, self.cam_2.dist,
             image_size, self.R, self.T
         )
         # Calcul des images rectifiées
-        map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.camera_matrix, self.cam_1.dist_coeffs, R1, self.P1, image_size, cv2.CV_32FC1)
-        map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.camera_matrix, self.cam_2.dist_coeffs, R2, self.P2, image_size, cv2.CV_32FC1)
+        map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.K, self.cam_1.dist, R1, P1, image_size, cv2.CV_32FC1)
+        map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.K, self.cam_2.dist, R2, P2, image_size, cv2.CV_32FC1)
         # Appliquer la rectification stéréo sur les images
         self.image_1 = cv2.remap(self.image_1, map1x, map1y, cv2.INTER_LINEAR)
         self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
@@ -179,18 +180,18 @@ class StereoSys():
 
     def find_disparity(self):
         stereo = cv2.StereoSGBM_create(minDisparity = min_disparity, numDisparities = num_disparities,preFilterCap = 1, blockSize = 5, uniquenessRatio = 2, speckleWindowSize = 50, speckleRange = 2, disp12MaxDiff = 1, P1 = 8*3*window_size**2, P2 = 32*3*window_size**2,mode = 4)
-        disparity = stereo.compute(self.gray_1,self.gray_2).astype(np.float32)
-        self.disparity = cv2.medianBlur(disparity, 5)
-        #self.disparity = cv.bilateralFilter(disparity,9,75,75)
+        self.disparity = stereo.compute(self.gray_1,self.gray_2).astype(np.float32)
+        #self.disparity = cv2.medianBlur(self.disparity, 5)
+        #self.disparity = cv2.bilateralFilter(self.disparity,9,75,75)
 
         if self.debug_mode:
-            plt.imshow(disparity,"jet")
+            print("Disparité calculée !")
+            plt.imshow(self.disparity,"jet")
             plt.show()
 
 
     def disparity_to_pointcloud(self, image_num):
-        image = self.image_1 if image_num == 0 else self.image_2
-        color = cv2.imread(image)
+        color = self.image_1 if image_num == 0 else self.image_2
         point_cloud = cv2.reprojectImageTo3D(self.disparity, self.Q)
         mask = self.disparity > self.disparity.min()
         xp=point_cloud[:,:,0]
@@ -206,19 +207,41 @@ class StereoSys():
         yp=yp.flatten().reshape(-1,1)
         zp=zp.flatten().reshape(-1,1)
         self.point3d = np.hstack((xp,yp,zp))
+        print(self.point3d.shape)
+        print(self.color.shape)
+
+
+    def display_point_cloud(self):
+        # Vérification des dimensions
+        assert self.point3d.shape[1] == 3, "self.point3d doit avoir une forme (N, 3)"
+        assert self.color.shape[1] == 3, "self.color doit avoir une forme (N, 3)"
+        assert self.point3d.shape[0] == self.color.shape[0], "self.point3d et self.color doivent avoir le même nombre de points"
+
+        # Filtrer les points invalides
+        valid_mask = np.isfinite(self.point3d).all(axis=1)
+        self.point3d = self.point3d[valid_mask]
+        self.color = self.color[valid_mask]
+
+        # Créer un nuage de points Open3D
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(self.point3d)
+        pcd.colors = o3d.utility.Vector3dVector(self.color.astype(np.float32) / 255.0)
+
+        # Afficher le nuage de points
+        o3d.visualization.draw_geometries([pcd])
 
     
-    def write_pointcloud(self, filename):
-        assert self.xyz_points.shape[1] == 3,'Input XYZ points should be Nx3 float array'
-        if rgb_points is None:
-            rgb_points = np.ones(self.xyz_points.shape).astype(np.uint8)*255
-        assert self.xyz_points.shape == rgb_points.shape,'Input RGB colors should be Nx3 float array and have same size as input XYZ points'
+    def write_pointcloud_ply(self, filename):
+        assert self.point3d.shape[1] == 3,'Input XYZ points should be Nx3 float array'
+        if self.color is None:
+            self.color = np.ones(self.point3d.shape).astype(np.uint8)*255
+        assert self.point3d.shape == self.color.shape,'Input RGB colors should be Nx3 float array and have same size as input XYZ points'
         # Écrire l'en-tête du fichier .ply
         print("opening file")
         fid = open(filename,'wb')
         fid.write(bytes('ply\n', 'utf-8'))
         fid.write(bytes('format binary_little_endian 1.0\n', 'utf-8'))
-        fid.write(bytes('element vertex %d\n'%self.xyz_points.shape[0], 'utf-8'))
+        fid.write(bytes('element vertex %d\n'%self.point3d.shape[0], 'utf-8'))
         fid.write(bytes('property float x\n', 'utf-8'))
         fid.write(bytes('property float y\n', 'utf-8'))
         fid.write(bytes('property float z\n', 'utf-8'))
@@ -228,13 +251,15 @@ class StereoSys():
         fid.write(bytes('end_header\n', 'utf-8'))
 
         # Écrire des points 3D dans un fichier .ply
-        for i in range(self.xyz_points.shape[0]):
+        for i in range(self.point3d.shape[0]):
             if(i%5000 == 0):
                 print(i)
-            fid.write(bytearray(struct.pack("fffccc",self.xyz_points[i,0],self.xyz_points[i,1],self.xyz_points[i,2],
-                                                rgb_points[i,2].tobytes(),rgb_points[i,1].tobytes(),
-                                                rgb_points[i,1].tobytes())))
+            fid.write(bytearray(struct.pack("fffccc",self.point3d[i,0],self.point3d[i,1],self.point3d[i,2],
+                                                self.color[i,2].tobytes(),self.color[i,1].tobytes(),
+                                                self.color[i,1].tobytes())))
         fid.close()
+
+  
 
     #####################################################
     #############         Debug Mode        #############

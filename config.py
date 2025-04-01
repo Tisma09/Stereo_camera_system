@@ -10,6 +10,6 @@ square_size = 2
 ##############################
 
 min_disparity=0
-max_disparity=128
+max_disparity=160
 num_disparities = max_disparity - min_disparity
-window_size = 9
+window_size = 7

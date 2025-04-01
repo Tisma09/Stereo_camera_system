@@ -73,6 +73,12 @@ class Camera():
                 obj_points.append(objp)
                 img_points.append(corners)
 
+            if debug_mode:
+                cv2.drawChessboardCorners(img, pattern_size, corners, ret)
+                cv2.imshow('Calibration', img)
+                cv2.waitKey(500)
+                cv2.destroyAllWindows()
+
         # Calibration de la caméra
         try :
             ret, self.K, self.dist, rvecs, tvecs = cv2.calibrateCamera(obj_points, img_points, gray.shape[::-1], None, None)
@@ -82,14 +88,10 @@ class Camera():
             return
 
         if debug_mode:
-            cv2.drawChessboardCorners(img, pattern_size, corners, ret)
-            cv2.imshow('Calibration', img)
-            cv2.waitKey(500)
-            cv2.destroyAllWindows()
             print("Calibration terminée !")
             print("Coefficients de distorsion :\n", self.dist)
             print("Matrice de la caméra :\n", self.K,)
-            print("Matrice de la caméra sans distortion :\n", self.K_undist,)
+        
 
 
     #####################################################
