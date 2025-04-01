@@ -9,7 +9,7 @@ square_size = 2
 ##  Parametre de disparité  ##
 ##############################
 
-min_disparity=0
-max_disparity=160
+min_disparity=23
+max_disparity=245
 num_disparities = max_disparity - min_disparity
-window_size = 7
+window_size = 5

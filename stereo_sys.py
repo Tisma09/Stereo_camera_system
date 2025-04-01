@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import struct
 import open3d as o3d
 
+from scipy import ndimage
+
 from camera import Camera 
 from config import *
 
@@ -15,14 +17,18 @@ class StereoSys():
         self.debug_mode = debug_mode
 
         self.data_name = data_name
-        self.cam_1 = Camera(data_name+"_1", cap_id_1)
-        self.cam_2 = Camera(data_name+"_2", cap_id_2)
+        #self.cam_1 = Camera(data_name+"_1", cap_id_1)
+        #self.cam_2 = Camera(data_name+"_2", cap_id_2)
         self.image_1, self.image_2 = None, None
         self.gray_1, self.gray_2 = None, None
-        self.R, self.T, self.E, self.F = None, None, None, None
+        self.R, self.T, self.E, self.F = np.zeros((3,1)), None, None, None
         self.Q = None
         self.disparity = None
         self.point3d, self.color = None, None
+
+        self.config_info()
+        self.image_1 = cv2.imread("im0.png")
+        self.image_2 = cv2.imread("im1.png")
         
     #####################################################
     #############    Photo to process      ##############
@@ -70,7 +76,6 @@ class StereoSys():
         self.image_2 = cv2.imread(save_path_2)
         self.gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
         self.gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
-
 
     #####################################################
     ########## Feature Detection and Matching ###########
@@ -132,58 +137,104 @@ class StereoSys():
             print("Matrice essentielle :\n", self.E)
             print("Matrice fondamentale :\n", self.F)
 
-            img1_with_lines = self.show_lines(self.image_1, pts1, 1)
-            img2_with_lines = self.show_lines(self.image_2, pts2, 2)
-            cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
-            cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-
-
+            #img1_with_lines = self.show_lines(self.image_1, pts1, 1)
+            #img2_with_lines = self.show_lines(self.image_2, pts2, 2)
+            #cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
+            #cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
+            #cv2.waitKey(0)
+            #cv2.destroyAllWindows()
 
     #####################################################
     #############   Stereo Rectification   ##############
     #####################################################
 
     def stereo_rectify(self):
+
         image_size = self.image_1.shape[:2][::-1] 
         # Pour image_size : les deux font la même taille donc peu importe 1 ou 2
 
         # Rectification stéréo
         R1, R2, P1, P2, self.Q, roi1, roi2 = cv2.stereoRectify(
-            self.cam_1.K, self.cam_1.dist,
-            self.cam_2.K, self.cam_2.dist,
+            self.K1, self.distortion,
+            self.K2, self.distortion,
             image_size, self.R, self.T
         )
         # Calcul des images rectifiées
-        map1x, map1y = cv2.initUndistortRectifyMap(self.cam_1.K, self.cam_1.dist, R1, P1, image_size, cv2.CV_32FC1)
-        map2x, map2y = cv2.initUndistortRectifyMap(self.cam_2.K, self.cam_2.dist, R2, P2, image_size, cv2.CV_32FC1)
+        map1x, map1y = cv2.initUndistortRectifyMap(self.K1, self.distortion, R1, P1, image_size, cv2.CV_32FC1)
+        #map2x, map2y = cv2.initUndistortRectifyMap(self.K2, self.distortion, R2, P2, image_size, cv2.CV_32FC1)
         # Appliquer la rectification stéréo sur les images
         self.image_1 = cv2.remap(self.image_1, map1x, map1y, cv2.INTER_LINEAR)
-        self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
+        #self.image_2 = cv2.remap(self.image_2, map2x, map2y, cv2.INTER_LINEAR)
         self.gray_1 = cv2.cvtColor(self.image_1, cv2.COLOR_BGR2GRAY)
         self.gray_2 = cv2.cvtColor(self.image_2, cv2.COLOR_BGR2GRAY)
 
         
         if self.debug_mode:
+            cv2.imshow("Image 1 Rectifiée", self.image_1)
+            cv2.imshow("Image 2 Rectifiée", self.image_2)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
             
             matches, keypoints1, keypoints2 = self.feature_matching()
             pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
             pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
-            img1_with_lines = self.show_lines(self.image_1, pts1, 1)
-            img2_with_lines = self.show_lines(self.image_2, pts2, 2)
-            cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
-            cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            #img1_with_lines = self.show_lines(self.image_1, pts1, 1)
+            #img2_with_lines = self.show_lines(self.image_2, pts2, 2)
+            #cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
+            #cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
+            #cv2.waitKey(0)
+            #cv2.destroyAllWindows()
+
+    def config_info(self, path="calibration_info.txt"):
+        file1 = open(path, 'r')
+        Lines = file1.readlines()
+        Dic = {}
+        for l in Lines:
+            a = l.split("=")
+            if(a[1][-1]== "\n"):
+                try:
+                    Dic[a[0]] = int(a[1][:-1])
+                except:
+                    Dic[a[0]] = a[1][:-1]
+                else:
+                    try:
+                        Dic[a[0]] = int(a[1])
+                    except:
+                        Dic[a[0]] = a[1]
+        Dic["cam0"] = Dic["cam0"].split(" ")
+        Dic["cam0"][0] = Dic["cam0"][0][1:]
+        Dic["cam0"][2] = Dic["cam0"][2][:-1]
+        Dic["cam0"][5] = Dic["cam0"][5][:-1]
+        Dic["cam0"][-1] = Dic["cam0"][-1][:-1]
+        Dic["cam1"] = Dic["cam1"].split(" ")
+        Dic["cam1"][0] = Dic["cam1"][0][1:]
+        Dic["cam1"][2] = Dic["cam1"][2][:-1]
+        Dic["cam1"][5] = Dic["cam1"][5][:-1]
+        Dic["cam1"][-1] = Dic["cam1"][-1][:-1]
+        for i in range(len(Dic["cam0"])):
+            Dic["cam0"][i] = float(Dic["cam0"][i])
+            Dic["cam1"][i] = float(Dic["cam1"][i])
+        Dic["cam0"] = np.array(Dic["cam0"]).reshape(3,3)
+        Dic["cam1"] = np.array(Dic["cam1"]).reshape(3,3)
+        self.max_disparity = Dic["vmax"]
+        self.min_disparity = Dic["vmin"]
+        self.num_disparities = self.max_disparity - self.min_disparity
+        self.window_size = 5
+        self.K1 = Dic["cam0"]
+        self.K2 = Dic["cam1"]
+        self.distortion = np.zeros((5,1)).astype(np.float32)
+        self.T = np.zeros((3,1))
+        self.T[0,0] = Dic["baseline"]
 
 
     def find_disparity(self):
-        stereo = cv2.StereoSGBM_create(minDisparity = min_disparity, numDisparities = num_disparities,preFilterCap = 1, blockSize = 5, uniquenessRatio = 2, speckleWindowSize = 50, speckleRange = 2, disp12MaxDiff = 1, P1 = 8*3*window_size**2, P2 = 32*3*window_size**2,mode = 4)
+
+        stereo = cv2.StereoSGBM_create(minDisparity = self.min_disparity, numDisparities = self.num_disparities,preFilterCap = 1, blockSize = 5, uniquenessRatio = 2, speckleWindowSize = 50, speckleRange = 2, disp12MaxDiff = 1, P1 = 8*3*window_size**2, P2 = 32*3*window_size**2,mode = 4)
         self.disparity = stereo.compute(self.gray_1,self.gray_2).astype(np.float32)
         self.disparity = cv2.medianBlur(self.disparity, 5)
         #self.disparity = cv2.bilateralFilter(self.disparity,9,75,75)
 
+        
         if self.debug_mode:
             print("Disparité calculée !")
             plt.imshow(self.disparity,"jet")
@@ -222,10 +273,13 @@ class StereoSys():
         self.point3d = self.point3d[valid_mask]
         self.color = self.color[valid_mask]
 
+        # Convertir BGR vers RGB
+        rgb_color = self.color[...,::-1]  # Inverse l'ordre des canaux
+
         # Créer un nuage de points Open3D
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(self.point3d)
-        pcd.colors = o3d.utility.Vector3dVector(self.color.astype(np.float32) / 255.0)
+        pcd.colors = o3d.utility.Vector3dVector(rgb_color.astype(np.float32) / 255.0)
 
         # Afficher le nuage de points
         o3d.visualization.draw_geometries([pcd])
