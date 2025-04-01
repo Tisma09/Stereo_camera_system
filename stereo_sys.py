@@ -111,8 +111,8 @@ class StereoSys():
         pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
         pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
 
-        # Matrice fondamentale avec RANSAC
-        self.F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC)
+        # Matrice fondamentale avec 8 points
+        self.F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)
 
         # Matrice essentielle
         K1 = self.cam_1.K
@@ -166,14 +166,8 @@ class StereoSys():
 
         
         if self.debug_mode:
-            
-            matches, keypoints1, keypoints2 = self.feature_matching()
-            pts1 = np.float32([keypoints1[m.queryIdx].pt for m in matches])
-            pts2 = np.float32([keypoints2[m.trainIdx].pt for m in matches])
-            img1_with_lines = self.show_lines(self.image_1, pts1, 1)
-            img2_with_lines = self.show_lines(self.image_2, pts2, 2)
-            cv2.imshow("Lignes Epipolaires - Image 1", img1_with_lines)
-            cv2.imshow("Lignes Epipolaires - Image 2", img2_with_lines)
+            cv2.imshow("Lignes Rectifie - Image 1", self.image_1)
+            cv2.imshow("Lignes Rectifie - Image 2", self.image_2)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
@@ -212,11 +206,6 @@ class StereoSys():
 
 
     def display_point_cloud(self):
-        # Vérification des dimensions
-        assert self.point3d.shape[1] == 3, "self.point3d doit avoir une forme (N, 3)"
-        assert self.color.shape[1] == 3, "self.color doit avoir une forme (N, 3)"
-        assert self.point3d.shape[0] == self.color.shape[0], "self.point3d et self.color doivent avoir le même nombre de points"
-
         # Filtrer les points invalides
         valid_mask = np.isfinite(self.point3d).all(axis=1)
         self.point3d = self.point3d[valid_mask]
@@ -229,36 +218,6 @@ class StereoSys():
 
         # Afficher le nuage de points
         o3d.visualization.draw_geometries([pcd])
-
-    
-    def write_pointcloud_ply(self, filename):
-        assert self.point3d.shape[1] == 3,'Input XYZ points should be Nx3 float array'
-        if self.color is None:
-            self.color = np.ones(self.point3d.shape).astype(np.uint8)*255
-        assert self.point3d.shape == self.color.shape,'Input RGB colors should be Nx3 float array and have same size as input XYZ points'
-        # Écrire l'en-tête du fichier .ply
-        print("opening file")
-        fid = open(filename,'wb')
-        fid.write(bytes('ply\n', 'utf-8'))
-        fid.write(bytes('format binary_little_endian 1.0\n', 'utf-8'))
-        fid.write(bytes('element vertex %d\n'%self.point3d.shape[0], 'utf-8'))
-        fid.write(bytes('property float x\n', 'utf-8'))
-        fid.write(bytes('property float y\n', 'utf-8'))
-        fid.write(bytes('property float z\n', 'utf-8'))
-        fid.write(bytes('property uchar red\n', 'utf-8'))
-        fid.write(bytes('property uchar green\n', 'utf-8'))
-        fid.write(bytes('property uchar blue\n', 'utf-8'))
-        fid.write(bytes('end_header\n', 'utf-8'))
-
-        # Écrire des points 3D dans un fichier .ply
-        for i in range(self.point3d.shape[0]):
-            if(i%5000 == 0):
-                print(i)
-            fid.write(bytearray(struct.pack("fffccc",self.point3d[i,0],self.point3d[i,1],self.point3d[i,2],
-                                            self.color[i,2].tobytes(),self.color[i,1].tobytes(),
-                                            self.color[i,1].tobytes())))
-        fid.close()
-
   
 
     #####################################################

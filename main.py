@@ -8,7 +8,7 @@ def main():
     # Param de sauvegarde 
     folder_image_1 = "images_calib"
     folder_image_2 = "images_calib"
-    folder_image_stereo = "images_calib_stereo"
+    folder_image_stereo = "images_stereo"
     folder_calibration = "data_calib"
 
     #list_cameras = find_cameras()
@@ -16,6 +16,25 @@ def main():
 
     # Initialisation du système stéréo
     stereo_sys = StereoSys("calibration_data", list_cameras[0], list_cameras[1], debug_mode=True)
+
+
+
+    ###############################################
+    # Charger des données de calibration externes #
+    ###############################################
+
+    req_calib_ext = input("Voulez-vous charger des données de calibration externe ? (y/n)")
+    if req_calib_ext == "y" :
+        stereo_sys.cam_1.load_ext_calib(folder_calibration)
+        stereo_sys.cam_2.load_ext_calib(folder_calibration)
+        print("Utilisation des images existantes dans le dossier " + folder_image_stereo)
+        stereo_sys.image_1 = cv2.imread(os.path.join(folder_image_stereo, "Image_cam_1.png"))
+        stereo_sys.image_2 = cv2.imread(os.path.join(folder_image_stereo, "Image_cam_2.png"))
+        stereo_sys.gray_1 = cv2.cvtColor(stereo_sys.image_1, cv2.COLOR_BGR2GRAY)
+        stereo_sys.gray_2 = cv2.cvtColor(stereo_sys.image_2, cv2.COLOR_BGR2GRAY)
+
+
+
 
     # Calibration des caméras
     load_path = os.path.join(folder_calibration, "calibration_data_1.npz")

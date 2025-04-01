@@ -2,6 +2,6 @@ sandbox/
 __pycache__/
 data_calib/
 images_calib/
-images_calib_stereo/
+images_stereo/
 build/
 dist/

@@ -116,5 +116,6 @@ class Camera():
         self.dist = npzfile['dist']
         print(f"Fichier {load_path}.npz chargé !")
 
-
+    def load_ext_calib(self, folder_name=None):
+        pass
 
