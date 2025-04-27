@@ -18,11 +18,9 @@ def main():
     stereo_sys = StereoSys("calibration_data", list_cameras[0], list_cameras[1], debug_mode=True)
 
 
-
-    ###############################################
-    # Charger des données de calibration externes #
-    ###############################################
-
+    # Charger des données de calibration externes
+    # Voir branche github test_moto finalement pour l'utilisation de données de calibration externes
+    """
     req_calib_ext = input("Voulez-vous charger des données de calibration externe ? (y/n)")
     if req_calib_ext == "y" :
         stereo_sys.cam_1.load_ext_calib(folder_calibration)
@@ -32,7 +30,7 @@ def main():
         stereo_sys.image_2 = cv2.imread(os.path.join(folder_image_stereo, "Image_cam_2.png"))
         stereo_sys.gray_1 = cv2.cvtColor(stereo_sys.image_1, cv2.COLOR_BGR2GRAY)
         stereo_sys.gray_2 = cv2.cvtColor(stereo_sys.image_2, cv2.COLOR_BGR2GRAY)
-
+    """
 
 
 
