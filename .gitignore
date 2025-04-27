@@ -5,3 +5,4 @@ images_calib/
 images_stereo/
 build/
 dist/
+main.spec
