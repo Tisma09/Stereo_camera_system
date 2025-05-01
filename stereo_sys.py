@@ -27,8 +27,8 @@ class StereoSys():
         self.point3d, self.color = None, None
 
         self.config_info()
-        self.image_1 = cv2.imread("im0.png")
-        self.image_2 = cv2.imread("im1.png")
+        self.image_1 = cv2.imread("im04.png")
+        self.image_2 = cv2.imread("im14.png")
         
     #####################################################
     #############    Photo to process      ##############
